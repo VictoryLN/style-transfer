@@ -83,6 +83,7 @@ class VGG19(object):
     #     # --get the bias
 
     def build_net(self, input_mat):
+        # print('build net')
         layers = (
             'conv1_1', 'relu1_1', 'conv1_2', 'relu1_2', 'pool1',
 
@@ -108,22 +109,23 @@ class VGG19(object):
             # print("cur_type:", cur_type)
             # name = weight['name'][0]
             # if cur_type == 'conv': wrong, cuz fc.type == 'conv'
-            print('Building', name)
+            # print('Building', name)
             if name[:4] == 'conv':
                 kernels, bias = weight['weights'][0]
-                print('get kernels.shape:', kernels.shape, '\nbias.shape:', bias.shape)
+                # print('get kernels.shape:', kernels.shape, '\nbias.shape:', bias.shape)
                 kernels = np.transpose(a=kernels, axes=(1, 0, 2, 3))
-                print('After transpose, kernels.shape:', kernels.shape, '\nbias.shape:', bias.shape)
+                # print('After transpose, kernels.shape:', kernels.shape, '\nbias.shape:', bias.shape)
                 bias = bias.reshape(-1)
-                print('bias is reshaped')
+                # print('bias is reshaped')
                 cur_lay = self.__conv_layer(cur_lay, kernels, bias, name)
             elif name[:4] == 'pool':
                 cur_lay = self.__pool_layer(cur_lay, name)
             elif name[:4] == 'relu':
                 cur_lay = self.__relu_layer(cur_lay, name)
             net[name] = cur_lay
-            print(name, 'is constructed')
-            print('')
+            # print(name, 'is constructed')
+            # print('')
+        # print('done')
         return net
 
     def __conv_layer(self,input_x, kernels, biases, name):
@@ -132,7 +134,8 @@ class VGG19(object):
         return bias
 
     def __pool_layer(self,input_x, name):
-        pool2 = tf.nn.max_pool(value=input_x, ksize=[1, 2, 2, 1], strides=[1, 1, 1, 1], padding='SAME', name=name)
+        # Pool stride is [1, 2, 2, 1],same as ksise. BUG
+        pool2 = tf.nn.max_pool(value=input_x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name=name)
         return pool2
 
     def __relu_layer(self,input_x, name):

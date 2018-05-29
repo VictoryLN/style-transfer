@@ -1,71 +1,63 @@
 from LossCalculator import LossCalculator
 import ImgProcess
-import argparse
 import tensorflow as tf
-from PIL import Image
 import settings as st
 import numpy as np
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-v', '--video', help='video input')
-    parser.add_argument('-c', '--content',
-                        default='Resources/ContentImages/default_content.jpg',
-                        help='content image input')
-    parser.add_argument('-s', '--style',
-                        default='Resources/StyleImages/default_style.jpg',
-                        help='style image input')
-    return parser.parse_args()  # 返回一个参数字典
 
-
-def train():
+def train(content_path, style_path):
 
     # pre_process
-    img_mats = ImgProcess.get_img_mat(content_path, style_path)
-    content_mat = img_mats['content']
-    style_mat = img_mats['style']
-
-    # random noised img
-    noise = np.random.normal(loc=0, scale=1/256, size=(1, st.HEIGHT, st.WIDTH, 3))
-    rand_mat = noise * st.NOISE_RATE + (1-st.NOISE_RATE) * content_mat
-    rand_mat = np.clip(rand_mat, -1, 1).astype(np.float32)
+    print('pre-process')
+    img_info = ImgProcess.get_img_info(content_path, style_path)
+    content_mat = img_info['content']['mat']
+    style_mat = img_info['style']['mat']
+    content_name = img_info['content']['name']
+    style_name = img_info['style']['name']
+    content_features = img_info['content']['features']
+    style_grams = img_info['style']['grams']
+    generated_name = img_info['generated']['name']
+    save_mat = img_info['generated']['past_save']
+    # print(generated_name)
+    print('pre-process done')
+    # get saved or random noised img
+    print('try to use checkpoint')
+    if save_mat is None:
+        noise = np.random.normal(loc=0, scale=1/256, size=(1, st.HEIGHT, st.WIDTH, 3))
+        rand_mat = noise * st.NOISE_RATE + (1-st.NOISE_RATE) * content_mat
+        rand_mat = np.clip(rand_mat, -1, 1).astype(np.float32)
+        print('no checkpoint,random noised image')
+    else:
+        rand_mat = save_mat
+        print('load checkpoint')
     rand_img = tf.Variable(dtype=tf.float32, initial_value=rand_mat)
-    print(rand_img.shape)
-    loss_calculator = LossCalculator(content_mat, style_mat)
+    # print(rand_img.shape)
+
+    # loss calculator
+    print('Initialize loss calculator')
+    if content_features is None or style_grams is None:
+        loss_calculator = LossCalculator(content_name, style_name, content_mat=content_mat, style_mat=style_mat)
+    else:
+        loss_calculator = LossCalculator(content_name, style_name, content_feature=content_features, style_grams=style_grams)
+    print('loss calculator done')
+    # loss
     cost = loss_calculator.loss(rand_img)
-    print(cost)
+    # print(cost)
+
+    # optimizer
     train_steps = tf.train.AdamOptimizer(st.STUDY_RATE).minimize(cost)
-    # VGG model
+
+    # train
     with tf.Session() as sess:
         print('session begin')
         sess.run(tf.global_variables_initializer())
-        print('init')
+        print('initialize done')
         for i in range(0, st.ITERATIONS):
             loss = sess.run(cost)
             sess.run(train_steps)
-            print('train_steps')
+            # print('train_steps')
             # if i % st.MESSAGE_TIME-1:
             print('After {} time(s) iteration, loss:{}'.format(i, loss))
             if i % st.MESSAGE_TIME == 0:
                 generated_mat = sess.run(rand_img)
-                ImgProcess.out_mat_img(generated_mat)
-    # Loss.test(img_mats)
-    # print(content_path)
-    # print(img_mats['content'])
-    # get loss
-    # loss = Loss.getLoss(imgMat)
-    # optimizer = tf.train.AdamOptimizer(0.1).minimize(loss)
-    # with tf.Session() as sess:
-    #     sess.run(optimizer)
-
-
-if __name__ == '__main__':
-    args = parse_args()
-    if args.video:
-        print("Start video style transfer")
-    else:
-        print("Start image style transfer")
-        content_path = args.content
-        style_path = args.style
-        print(content_path)
-        train()
+                ImgProcess.out_mat_img(generated_mat, generated_name)
