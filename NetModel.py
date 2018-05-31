@@ -26,7 +26,7 @@ import settings
 class VGG19(object):
     def __init__(self):
         self.vgg19 = sio.loadmat(settings.VGG19_PATH)
-
+        self.mean = self.vgg19['normalization'][0][0][0][0][0]
     # def __vgg19_mat_test(self):
     #     vgg19 = sio.loadmat(settings.VGG19_PATH)
     #     print("vgg19['layers'].shape = ", vgg19['layers'].shape)
@@ -83,7 +83,7 @@ class VGG19(object):
     #     # --get the bias
 
     def build_net(self, input_mat):
-        # print('build net')
+        print('build net')
         layers = (
             'conv1_1', 'relu1_1', 'conv1_2', 'relu1_2', 'pool1',
 
@@ -140,3 +140,43 @@ class VGG19(object):
 
     def __relu_layer(self,input_x, name):
         return tf.nn.relu(features=input_x, name=name)
+
+
+# still in coding
+class GEN(object):
+    def __init__(self, weights=None):
+        self.weights = weights
+        if weights is None:
+            # random generated weights
+            pass
+            self.weights = None
+        # then use weights build net
+
+    def buildNet(self, input_mat, training=False):
+        # input_mat should be zero-mean
+
+        pass
+
+    def res_block(self, input_x, kernels, bias, strides, training=False):
+        # kernels saved the next two conv's kernels
+        k1,k2 = kernels
+        b1,b2 = bias
+        conv_1 = self.conv(input_x, k1, b1, strides, training)
+        conv_2 = self.conv(conv_1, k2, b2, strides, training)
+        return input_x+conv_2
+        pass
+
+    def pool(self):
+        pass
+
+    def conv(self, input_x, kernels, bias, stride=1, training=False):
+        strides = [1, stride, stride, 1]
+        if training is False:
+            conv = tf.nn.conv2d(input=input_x, filter=tf.Variable(kernels),
+                                strides=strides, padding='SAME')
+            bias = tf.nn.bias_add(conv, tf.Variable(bias))
+        else:
+            conv = tf.nn.conv2d(input=input_x, filter=tf.constant(kernels),
+                                strides=strides, padding='SAME')
+            bias = tf.nn.bias_add(conv, tf.constant(bias))
+        return bias

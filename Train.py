@@ -5,11 +5,11 @@ import settings as st
 import numpy as np
 
 
-def train(content_path, style_path):
+def train(content_path, style_path, gen_size):
 
     # pre_process
     print('pre-process')
-    img_info = ImgProcess.get_img_info(content_path, style_path)
+    img_info = ImgProcess.get_img_info(content_path, style_path, gen_size)
     content_mat = img_info['content']['mat']
     style_mat = img_info['style']['mat']
     content_name = img_info['content']['name']
@@ -23,9 +23,10 @@ def train(content_path, style_path):
     # get saved or random noised img
     print('try to use checkpoint')
     if save_mat is None:
-        noise = np.random.normal(loc=0, scale=1/256, size=(1, st.HEIGHT, st.WIDTH, 3))
+        noise = np.random.normal(loc=0, scale=1, size=(1, gen_size[1], gen_size[0], 3))
         rand_mat = noise * st.NOISE_RATE + (1-st.NOISE_RATE) * content_mat
-        rand_mat = np.clip(rand_mat, -1, 1).astype(np.float32)
+        # rand_mat = content_mat
+        # rand_mat = np.clip(rand_mat, -255, 255).astype(np.float32)
         print('no checkpoint,random noised image')
     else:
         rand_mat = save_mat
@@ -36,15 +37,19 @@ def train(content_path, style_path):
     # loss calculator
     print('Initialize loss calculator')
     if content_features is None or style_grams is None:
-        loss_calculator = LossCalculator(content_name, style_name, content_mat=content_mat, style_mat=style_mat)
+        loss_calculator = LossCalculator(content_name, style_name,
+                                         content_mat=content_mat, style_mat=style_mat)
     else:
-        loss_calculator = LossCalculator(content_name, style_name, content_feature=content_features, style_grams=style_grams)
+        loss_calculator = LossCalculator(content_name, style_name,
+                                         content_feature=content_features, style_grams=style_grams)
     print('loss calculator done')
     # loss
     cost = loss_calculator.loss(rand_img)
     # print(cost)
 
     # optimizer
+    # global_step = tf.Variable(0, trainable=False)
+    # learning_rate = tf.train.exponential_decay(st.STUDY_RATE, global_step, 50, 0.96, staircase=True)
     train_steps = tf.train.AdamOptimizer(st.STUDY_RATE).minimize(cost)
 
     # train
@@ -52,12 +57,12 @@ def train(content_path, style_path):
         print('session begin')
         sess.run(tf.global_variables_initializer())
         print('initialize done')
-        for i in range(0, st.ITERATIONS):
+        for i in range(st.ITERATIONS):
             loss = sess.run(cost)
             sess.run(train_steps)
             # print('train_steps')
             # if i % st.MESSAGE_TIME-1:
             print('After {} time(s) iteration, loss:{}'.format(i, loss))
-            if i % st.MESSAGE_TIME == 0:
+            if i % st.MESSAGE_TIME == st.MESSAGE_TIME-1:
                 generated_mat = sess.run(rand_img)
                 ImgProcess.out_mat_img(generated_mat, generated_name)

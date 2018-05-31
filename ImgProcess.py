@@ -4,7 +4,7 @@ import numpy as np
 import scipy.misc as sc
 
 
-def get_img_info(content_path, style_path):
+def get_img_info(content_path, style_path, gen_size):
     print("Processing.py receives content path: ", content_path)
     # check picture exist
     if not (content_path.endswith('.jpg') and style_path.endswith('.jpg')):
@@ -15,7 +15,7 @@ def get_img_info(content_path, style_path):
     generated_name = content_name + '_' + style_name
     # import img
     print('importing images')
-    content_img = Image.open(content_path)
+    content_img = Image.open(content_path)  # R G B
     if content_img is None:
         print("Not found such content image")
     style_img = Image.open(style_path)
@@ -24,34 +24,34 @@ def get_img_info(content_path, style_path):
     print('importing images done')
     # resize img
     print('resize images')
-    size = (st.WIDTH, st.HEIGHT)
-    content_img = content_img.resize(size)
-    style_img = style_img.resize(size)
+    size = gen_size  # img:'WxHxN'
+
+    content_img = content_img.resize(size, Image.BILINEAR)
+    # style_img = style_img.resize(size, Image.BILINEAR)
+    # sc.imsave('{}{}.jpg'.format(st.GENERATED_PATH, 'normal'), style_img)
     print('resize images done')
     # content_img.show()
     # style_img.show()
 
     # transfer to matrix
-    content_mat = np.asarray(a=content_img, dtype=np.float32)
+    content_mat = np.asarray(a=content_img, dtype=np.float32)  # mat:HxWxN
     style_mat = np.asarray(a=style_img, dtype=np.float32)
 
-    # [0,255] map to [-1,1]
-    content_mat = content_mat - 127.5
-    style_mat = style_mat - 127.5
-    content_mat = content_mat / 128
-    style_mat = style_mat / 128
-
+    # [0,255] zero-mean and normalized
+    content_mat = content_mat - st.MEAN_PIXEL
+    style_mat = style_mat - st.MEAN_PIXEL
+    print(content_mat)
     # transfer to 1*N*N*3
-    dim = (1, st.HEIGHT, st.WIDTH, 3)
-    content_mat = np.reshape(a=content_mat, newshape=dim)
-    style_mat = np.reshape(a=style_mat, newshape=dim)
+    content_mat = np.expand_dims(a=content_mat, axis=0)
+    style_mat = np.expand_dims(a=style_mat, axis=0)
     # print(content_mat.shape)
     # print(content_mat)
 
     # get features, grams and past result
+    print('try to get saved')
     content_features = {}
     style_grams = {}
-    print('try to get saved')
+
     try:
         for layer in st.CONTENT_LAYER:
             content_features[layer] = np.load(st.SAVE_CONTENT_PATH + content_name + '_' + layer + '.npy')
@@ -73,9 +73,8 @@ def get_img_info(content_path, style_path):
 def out_mat_img(img_mat, img_name):
     print('output and save generated image')
     np.save(st.SAVE_GENERATED_PATH + img_name + '.npy', img_mat)
-    img_mat = img_mat * 128
-    img_mat += [128.0, 128.0, 128.0]
     img_mat = img_mat[0]
+    img_mat += st.MEAN_PIXEL
     img_mat = np.clip(img_mat, 0, 255).astype(np.uint8)
     sc.imsave('{}{}.jpg'.format(st.GENERATED_PATH, img_name), img_mat)
     print('done')

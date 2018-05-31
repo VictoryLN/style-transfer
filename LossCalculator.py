@@ -5,7 +5,8 @@ import numpy as np
 
 
 class LossCalculator(object):
-    def __init__(self, content_name, style_name, content_mat=None, style_mat=None, content_feature=None, style_grams=None):
+    def __init__(self, content_name, style_name,
+                 content_mat=None, style_mat=None, content_feature=None, style_grams=None):
         # if content_feature is None and style_mat is None and content_feature is None and style_feature is None:
         #     exit(1)
         self.content_feature = content_feature
@@ -15,8 +16,8 @@ class LossCalculator(object):
         self.content_layer_num = len(st.CONTENT_LAYER)
         self.style_layer_num = len(st.STYLE_LAYERS)
         if content_mat is not None and style_mat is not None:
-            self.content_tensor = tf.constant(content_mat)
-            self.style_tensor = tf.constant(style_mat)
+            self.content_tensor = tf.constant(content_mat, tf.float32)
+            self.style_tensor = tf.constant(style_mat, tf.float32)
         if content_feature is None:
             self.content_feature = {}
             with tf.Session() as sess:
@@ -38,7 +39,7 @@ class LossCalculator(object):
                 print('build style net done')
                 for layer in st.STYLE_LAYERS:
                     features = sess.run(net[layer])
-                    self.style_grams[layer], _, __ = self.__gram(features)
+                    self.style_grams[layer], _, _ = self.__gram(features)
                     np.save(st.SAVE_STYLE_PATH + style_name + '_' + layer + '.npy', self.style_grams[layer])
                 print('get style features done')
 
@@ -60,8 +61,9 @@ class LossCalculator(object):
         style_loss = 0.0
         for layer in st.STYLE_LAYERS:
             gram, n_l, m_l = self.__gram(net[layer])
+            print(n_l, ',', m_l)
             # print(gram.shape)
-            layer_loss = tf.nn.l2_loss(gram - self.style_grams[layer]) / (2 * m_l * m_l * n_l * n_l)
+            layer_loss = tf.nn.l2_loss(gram - self.style_grams[layer]) / (2 * m_l * n_l * m_l * n_l)
             # print(layer_loss.shape)
             style_loss = style_loss + layer_loss
         style_loss = style_loss / self.style_layer_num
@@ -79,7 +81,10 @@ class LossCalculator(object):
             n_l = features.shape[1]
             m_l = features.shape[0]
             # print('features.reshape', features.shape)
+            # print(features.size)
+            # print(features.shape)
             gram = np.matmul(features.T, features)
+
         elif isinstance(features, tf.Tensor):
             # print('it\'s tensor', features.shape)
             features = tf.reshape(features, [-1, features.shape[-1]])
