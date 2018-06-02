@@ -5,11 +5,11 @@ import settings as st
 import numpy as np
 
 
-def train(content_path, style_path, gen_size):
+def train(content_path, style_path):
 
     # pre_process
     print('pre-process')
-    img_info = ImgProcess.get_img_info(content_path, style_path, gen_size)
+    img_info = ImgProcess.get_img_info(content_path, style_path)
     content_mat = img_info['content']['mat']
     style_mat = img_info['style']['mat']
     content_name = img_info['content']['name']
@@ -23,10 +23,10 @@ def train(content_path, style_path, gen_size):
     # get saved or random noised img
     print('try to use checkpoint')
     if save_mat is None:
-        noise = np.random.normal(loc=0, scale=1, size=(1, gen_size[1], gen_size[0], 3))
+        noise = np.random.normal(loc=0, scale=1, size=(1, st.HEIGHT, st.WIDTH, 3))
         rand_mat = noise * st.NOISE_RATE + (1-st.NOISE_RATE) * content_mat
         # rand_mat = content_mat
-        # rand_mat = np.clip(rand_mat, -255, 255).astype(np.float32)
+        rand_mat = np.clip(rand_mat, -255, 255).astype(np.float32)
         print('no checkpoint,random noised image')
     else:
         rand_mat = save_mat

@@ -4,7 +4,7 @@ import numpy as np
 import scipy.misc as sc
 
 
-def get_img_info(content_path, style_path, gen_size):
+def get_img_info(content_path, style_path):
     print("Processing.py receives content path: ", content_path)
     # check picture exist
     if not (content_path.endswith('.jpg') and style_path.endswith('.jpg')):
@@ -24,9 +24,11 @@ def get_img_info(content_path, style_path, gen_size):
     print('importing images done')
     # resize img
     print('resize images')
-    size = gen_size  # img:'WxHxN'
+    size = (st.WIDTH, st.HEIGHT)
 
     content_img = content_img.resize(size, Image.BILINEAR)
+    # box = (200,200,424,424)
+    # style_img = style_img.crop(box)
     # style_img = style_img.resize(size, Image.BILINEAR)
     # sc.imsave('{}{}.jpg'.format(st.GENERATED_PATH, 'normal'), style_img)
     print('resize images done')
@@ -34,24 +36,28 @@ def get_img_info(content_path, style_path, gen_size):
     # style_img.show()
 
     # transfer to matrix
-    content_mat = np.asarray(a=content_img, dtype=np.float32)  # mat:HxWxN
+    content_mat = np.asarray(a=content_img, dtype=np.float32)
     style_mat = np.asarray(a=style_img, dtype=np.float32)
 
     # [0,255] zero-mean and normalized
     content_mat = content_mat - st.MEAN_PIXEL
     style_mat = style_mat - st.MEAN_PIXEL
-    print(content_mat)
+    # content_mat = content_mat / 256
+    # style_mat = style_mat / 256
     # transfer to 1*N*N*3
-    content_mat = np.expand_dims(a=content_mat, axis=0)
-    style_mat = np.expand_dims(a=style_mat, axis=0)
+    # dim = (1, st.HEIGHT, st.WIDTH, 3)
+    #
+    # content_mat = np.reshape(a=content_mat, newshape=dim)
+    # style_mat = np.reshape(a=style_mat, newshape=dim)
     # print(content_mat.shape)
     # print(content_mat)
-
+    content_mat = np.expand_dims(a=content_mat, axis=0)
+    style_mat = np.expand_dims(a=style_mat, axis=0)
+    print(style_mat.shape)
     # get features, grams and past result
     print('try to get saved')
     content_features = {}
     style_grams = {}
-
     try:
         for layer in st.CONTENT_LAYER:
             content_features[layer] = np.load(st.SAVE_CONTENT_PATH + content_name + '_' + layer + '.npy')

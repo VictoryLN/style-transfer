@@ -111,5 +111,6 @@ git_path.txt
 *.ckpt
 /.idea
 .idea/
-.Save/
-.Output/
+Save/
+Output/
+events.*

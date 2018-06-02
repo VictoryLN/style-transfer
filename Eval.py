@@ -1,6 +1,6 @@
 import Train
 import argparse
-import settings as st
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -11,9 +11,6 @@ def parse_args():
     parser.add_argument('-s', '--style',
                         default='Resources/StyleImages/default_style.jpg',
                         help='style image input')
-    parser.add_argument('-sz', '--size',
-                        default=(st.WIDTH, st.HEIGHT),
-                        help='generated image size(WxH)')
     return parser.parse_args()  # 返回一个参数字典
 
 
@@ -25,9 +22,8 @@ def main():
         print("Start image style transfer")
         content_path = args.content
         style_path = args.style
-        size = args.size
         print(content_path)
-        Train.train(content_path, style_path, size)
+        Train.train(content_path,style_path)
 
 
 if __name__ == '__main__':
