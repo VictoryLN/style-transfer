@@ -129,8 +129,8 @@ class VGG19(object):
         return net
 
     def __conv_layer(self,input_x, kernels, biases, name):
-        conv = tf.nn.conv2d(input=input_x, filter=tf.constant(kernels), strides=[1, 1, 1, 1], padding='SAME', name=name)
-        bias = tf.nn.bias_add(conv, tf.constant(biases))
+        conv = tf.nn.conv2d(input=input_x, filter=kernels, strides=[1, 1, 1, 1], padding='SAME', name=name)
+        bias = tf.nn.bias_add(conv, biases)
         return bias
 
     def __pool_layer(self,input_x, name):
@@ -147,9 +147,11 @@ class GEN(object):
     def __init__(self):
         pass
 
-    def buildNet(self, input_mat, training=False):
+    def buildNet(self, input_mat):
+        # input: one batch of input_img shape [batch,h,w,c]
         # input_mat should be zero-mean
-        input_mat = input_mat / 255.0 - 0.5
+        # output: one batch of input_img shape [batch,h,w,c]
+        # input_mat = input_mat / 255.0 - 0.5
         net_info = {
             'conv_1': {'type': 'conv', 'kernel': 9, 'stride': 1, 'in-channel': 3, 'out-channel': 32,
                        'padding': 'SAME', 'Nonlinearity': 'ReLU'},
@@ -163,51 +165,59 @@ class GEN(object):
             'resBlk_7': {'type': 'residual_block', 'kernel': 3, 'stride': 1, 'in-channel': 128, 'out-channel': 128},
             'resBlk_8': {'type': 'residual_block', 'kernel': 3, 'stride': 1, 'in-channel': 128, 'out-channel': 128},
             'upsampling_9': {'type': 'upsampling', 'kernel': 3, 'stride': 1, 'in-channel': 128, 'out-channel': 64},
-            'upsampling_10': {'type': 'upsampling', 'in-channel': 64, 'out-channel': 32},
+            'upsampling_10': {'type': 'upsampling', 'kernel': 3, 'stride': 1, 'in-channel': 64, 'out-channel': 32},
             'conv_11': {'type': 'conv', 'kernel': 9, 'stride': 1, 'in-channel': 32, 'out-channel': 3,
                         'padding': 'SAME', 'Nonlinearity': 'tanh'}
         }
-
-        x = tf.pad(input_mat, [[0, 0], [10, 10], [10, 10], [0, 0]], mode='REFELCT')
+        print('input_mat',input_mat)
+        x = tf.pad(input_mat, [[0, 0], [10, 10], [10, 10], [0, 0]], mode='REFLECT')
         for layer in net_info.values():
+            print('layer:',layer)
             layer_type = layer['type']
             if layer_type == 'conv':
                 # conv-batchNormal-relu
                 x = self.conv(x, layer['kernel'], layer['in-channel'], layer['out-channel'],
                               layer['stride'])
-                x = self.batch_norm(x, layer['out-channel'], training)
-                if layer['Nonlinearity'] == 'relu':
+                x = self.instance_norm(x)
+                if layer['Nonlinearity'] == 'ReLU':
                     x = self.relu(x)
                 else:
                     x = self.tanh(x)
+                print('x', x.get_shape())
             elif layer_type == 'residual_block':
                 x = self.res_block(x, layer['kernel'], layer['in-channel'], layer['out-channel'],
                                    layer['stride'])
+                print('x', x.get_shape())
             elif layer_type == 'upsampling':
                 x = self.upsampling(x, layer['kernel'], layer['in-channel'], layer['out-channel'],
-                                    layer['stride'], training)
+                                    layer['stride'])
+                print('x', x.get_shape())
+
         x = (x + 1) * 127.5
-        height = tf.shape(x)[1]
-        width = tf.shape(x)[2]
+        print(x)
+        # 输出的是0-255
+        height = x.get_shape()[1]    #tf.shape()函数不是获得数值，而是创造运算，无法立刻获得结果，但是可以print出来
+        width = x.get_shape()[2]
+        print('width', width)
+        print('height', height)
         x = tf.image.crop_to_bounding_box(x, 10, 10, height-20, width-20)
+        print(x)
         return x
 
-    def res_block(self, input_x, kernels, in_channels, out_channels, stride=1):
+    def res_block(self, input_x, kernel, in_channels, out_channels, stride=1):
         # kernels saved the next two conv's kernels
-        k1, k2 = kernels
-        conv_1 = self.conv(input_x, k1, in_channels, out_channels, stride)
+        conv_1 = self.conv(input_x, kernel, in_channels, out_channels, stride)
         relu_1 = self.relu(conv_1)
-        conv_2 = self.conv(relu_1, k2, in_channels, out_channels, stride)
-        relu_2 = self.relu(conv_2)
+        conv_2 = self.conv(relu_1, kernel, in_channels, out_channels, stride)
         # add the input and the output
-        return input_x+relu_2
+        return input_x+conv_2
     # Batch-Normalization---对一批数据集的某一层的输出进行归一化（减均值，除标准差），处理后均值为0，方差为1。
     # BN一般跟在CNN后面，在激活函数之前
     #
     # 偏置项没有用了（因为加入偏置项相当于偏动均值，在恢复原始特征的时候均值偏动的部分会被减去，不起任何作用）
     #
 
-    def batch_norm(self, x, size, training, decay=0.999):
+    def batch_norm(self, x, size, training, decay=tf.constant(0.999)):
         beta = tf.Variable(tf.zeros([size]), name='beta')
         scale = tf.Variable(tf.ones([size]), name='scale')
         pop_mean = tf.Variable(tf.zeros([size]))
@@ -224,14 +234,12 @@ class GEN(object):
 
         def population_statistics():
             return tf.nn.batch_normalization(x, pop_mean, pop_var, beta, scale, epsilon, name='batch_norm')
-
         return tf.cond(training, batch_statistics, population_statistics)
 
     def tanh(self, input_x):
         return tf.nn.tanh(input_x)
 
     def relu(self, input_x):
-        pass
         # 有代码指出relu之前需要先把nan转为0，但为什么训练过程中很可能出现nan呢？
         return tf.nn.relu(input_x)
 
@@ -243,18 +251,96 @@ class GEN(object):
         return conv
 
     def img_scale(self, x, scale):
-        weight = x.get_shape()[1].value
-        height = x.get_shape()[2].value
+        height = x.get_shape()[1].value
+        width = x.get_shape()[2].value
         try:
-            out = tf.image.resize_nearest_neighbor(x, size=(weight*scale, height*scale))
+            out = tf.image.resize_nearest_neighbor(x, size=(height*scale, width*scale))
         except:
-            out = tf.image.resize_images(x, size=(weight*scale, height*scale))
+            out = tf.image.resize_images(x, size=(height*scale, width*scale))
         return out
 
-    def upsampling(self, input_x, kernel, in_channels, out_channels, stride=1, training=False):
+    def instance_norm(self, x):
+        epsilon = 1e-9
+        mean, var = tf.nn.moments(x, [1, 2], keep_dims=True)
+        return tf.div(tf.subtract(x, mean), tf.sqrt(tf.add(var, epsilon)))
+
+    def upsampling(self, input_x, kernel, in_channels, out_channels, stride=1):
         out = self.img_scale(input_x, 2)
         out = self.conv(out, kernel, in_channels, out_channels, stride)
-        out = self.batch_norm(out, out_channels, training=training)
+        out = self.instance_norm(out)
         out = self.relu(out)
         return out
 
+
+WEIGHTS_INIT_STDEV = 0.1
+
+
+def _conv_init_vars(net, out_channels, filter_size, transpose=False):
+    _, rows, cols, in_channels = [i.value for i in net.get_shape()]
+    if not transpose:
+        weights_shape = [filter_size, filter_size, in_channels, out_channels]
+    else:
+        weights_shape = [filter_size, filter_size, out_channels, in_channels]
+
+    weights_init = tf.Variable(tf.truncated_normal(weights_shape, stddev=WEIGHTS_INIT_STDEV, seed=1),
+                               dtype=tf.float32)
+    return weights_init
+
+
+def net(image):
+    conv1 = _conv_layer(image, 32, 9, 1)
+    conv2 = _conv_layer(conv1, 64, 3, 2)
+    conv3 = _conv_layer(conv2, 128, 3, 2)
+    resid1 = _residual_block(conv3, 3)
+    resid2 = _residual_block(resid1, 3)
+    resid3 = _residual_block(resid2, 3)
+    resid4 = _residual_block(resid3, 3)
+    resid5 = _residual_block(resid4, 3)
+    conv_t1 = _conv_tranpose_layer(resid5, 64, 3, 2)
+    conv_t2 = _conv_tranpose_layer(conv_t1, 32, 3, 2)
+    conv_t3 = _conv_layer(conv_t2, 3, 9, 1, relu=False)
+    preds = (tf.nn.tanh(conv_t3)+1) * 127.5
+    return preds
+
+
+def _conv_layer(net, num_filters, filter_size, strides, relu=True):
+    weights_init = _conv_init_vars(net, num_filters, filter_size)
+    strides_shape = [1, strides, strides, 1]
+    net = tf.nn.conv2d(net, weights_init, strides_shape, padding='SAME')
+    net = _instance_norm(net)
+    if relu:
+        net = tf.nn.relu(net)
+
+    return net
+
+
+def _conv_tranpose_layer(net, num_filters, filter_size, strides):
+    weights_init = _conv_init_vars(net, num_filters, filter_size, transpose=True)
+
+    batch_size, rows, cols, in_channels = [i.value for i in net.get_shape()]
+    new_rows, new_cols = int(rows * strides), int(cols * strides)
+    # new_shape = #tf.pack([tf.shape(net)[0], new_rows, new_cols, num_filters])
+
+    new_shape = [batch_size, new_rows, new_cols, num_filters]
+    tf_shape = tf.stack(new_shape)
+    strides_shape = [1, strides, strides, 1]
+
+    net = tf.nn.conv2d_transpose(net, weights_init, tf_shape, strides_shape, padding='SAME')
+    net = _instance_norm(net)
+    return tf.nn.relu(net)
+
+
+def _residual_block(net, filter_size=3):
+    tmp = _conv_layer(net, 128, filter_size, 1)
+    return net + _conv_layer(tmp, 128, filter_size, 1, relu=False)
+
+
+def _instance_norm(net, train=True):
+    batch, rows, cols, channels = [i.value for i in net.get_shape()]
+    var_shape = [channels]
+    mu, sigma_sq = tf.nn.moments(net, [1, 2], keep_dims=True)
+    shift = tf.Variable(tf.zeros(var_shape))
+    scale = tf.Variable(tf.ones(var_shape))
+    epsilon = 1e-3
+    normalized = (net - mu) / (sigma_sq + epsilon) ** (.5)
+    return scale.value() * normalized + shift.value()

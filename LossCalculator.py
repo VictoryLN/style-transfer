@@ -1,116 +1,117 @@
 from NetModel import VGG19
+from NetModel import GEN
+import NetModel
 import tensorflow as tf
 import settings as st
 import numpy as np
-
+import io_process as io_p
 
 class LossCalculator(object):
-    def __init__(self, content_name, style_name, content_mat=None, style_mat=None, content_feature=None, style_grams=None):
-        # if content_feature is None and style_mat is None and content_feature is None and style_feature is None:
-        #     exit(1)
-        self.content_feature = content_feature
-        self.style_grams = style_grams
+    def __init__(self, style_img, style_weight, content_weight,tv_weight):
+        # Input: preprocessed style_img
         self.vgg = VGG19()
-        self.generated_feature = None
-        self.content_layer_num = len(st.CONTENT_LAYER)
-        self.style_layer_num = len(st.STYLE_LAYERS)
-        if content_mat is not None and style_mat is not None:
-            self.content_tensor = tf.constant(content_mat, tf.float32)
-            self.style_tensor = tf.constant(style_mat, tf.float32)
-        if content_feature is None:
-            self.content_feature = {}
-            with tf.Session() as sess:
-                print('get content features')
-                print('build content net')
-                net = self.vgg.build_net(self.content_tensor)
-                print('build content net done')
-                for layer in st.CONTENT_LAYER:
-                    features_mat = sess.run(net[layer])
-                    self.content_feature[layer] = features_mat
-                    print("stored shape:", self.content_feature[layer].shape)
-                    np.save(st.SAVE_CONTENT_PATH + content_name + '_' + layer + '.npy', self.content_feature[layer])
-                print('get content features done')
-        if style_grams is None:
-            self.style_grams = {}
-            with tf.Session() as sess:
-                print('get style features')
-                print('build style net')
-                net = self.vgg.build_net(self.style_tensor)
-                print('build style net done')
-                for layer in st.STYLE_LAYERS:
-                    features = sess.run(net[layer])
-                    self.style_grams[layer], _, _ = self.__gram(features)
-                    np.save(st.SAVE_STYLE_PATH + style_name + '_' + layer + '.npy', self.style_grams[layer])
-                print('get style features done')
+        self.gen = GEN()
+        self.style_weight = style_weight
+        self.content_weight = content_weight
+        self.style_grams = self.get_style_grams(style_img)
+        self.tv_weight = tv_weight
+
+    def get_style_grams(self, style_img):
+        # Input : preprocessed style_img in shape [1,h,w,3]
+        # Brief:  compute style grams
+        # Attention: all grams are divided by size at last
+        # Output: style_grams dict{layer:gram}
+
+        # g = tf.Graph()
+        # with g.as_default(), g.device('/cpu:0'), tf.Session() as sess:
+        style_grams = {}
+        with tf.Session() as sess:
+            net = self.vgg.build_net(style_img)
+            for layer in st.STYLE_LAYERS:
+                features = sess.run(net[layer])
+                # features shape [1,h,w,c] to [x,c]
+                features = tf.reshape(features, [-1, features.shape[3]])
+                size = features.shape[0].value * features.shape[1].value
+                # size = tf.shape(features).value()[0] * tf.shape(features).value()[1]
+                print('style gram size:',size)
+                gram = sess.run(tf.matmul(features, features, transpose_a=True) / size)  # gram求出来要除size
+                print('gram=', gram)
+                style_grams[layer] = gram
+        return style_grams
 
     def __del__(self):
         print('LossCalculator Destroyed')
 
-    def loss(self, generated_mat):
-        # print('computing total loss.')
-        net = self.vgg.build_net(generated_mat)
+    def loss(self, input_batch):
+        # Input : a batch of preprocessed content_img in shape [batch,h,w,3] ndarray
+        # 1. build gen input_batch to get generate_output
+        # 2. process the output
+        # 2. build vgg of input_batch and generate_output to get content_features and generate_featuers
+        # 3. style_loss(generater_features)
+        # 4. content_loss(content_features,generater_features)
+        # 5. total variation
+        # 6. add all
+        # Output : total_loss tensor
+        # build gen
+        print('input_batch', input_batch)
+        pre_gen_output = input_batch - st.MEAN_PIXEL
+        gen_output = self.gen.buildNet(pre_gen_output)
+        print('gen_output', gen_output)
+        # process the output
+        processed_gen_output = gen_output - st.MEAN_PIXEL
+        print('gen_output - mean', gen_output)
+        # build vgg net
+        gen_net = self.vgg.build_net(processed_gen_output)
+        content_net = self.vgg.build_net(input_batch)
+        print('gen_net', gen_net)
+        print('content_net',content_net)
         # content_loss
         content_loss = 0.0
         for layer in st.CONTENT_LAYER:
-            size = tf.size(net[layer])
-            layer_loss = tf.nn.l2_loss(net[layer] - self.content_feature[layer]) * 2 / tf.to_float(size)
-            # print(layer_loss)
-            content_loss = content_loss + layer_loss
-        # content_loss = content_loss / self.content_layer_num
-        # print(content_loss)
+            _, height, width, channels = map(lambda i: i.value, content_net[layer].get_shape())
+            size = height * width * channels
+            content_loss += tf.nn.l2_loss(gen_net[layer] - content_net[layer]) * 2 / tf.to_float(size)
+        content_loss = content_loss * self.content_weight
         # style_loss
         style_loss = 0.0
         for layer in st.STYLE_LAYERS:
-            gram, n_l, m_l = self.__gram(net[layer])
-            print(n_l, ',', m_l)
-            # print(gram.shape)
-            size = tf.size(net[layer])
-            layer_loss = tf.nn.l2_loss(gram - self.style_grams[layer]) * 2 / tf.to_float(size)
-            # print(layer_loss.shape)
-            style_loss = style_loss + layer_loss
-        # style_loss = style_loss / self.style_layer_num
+            gram, size = self.__gram(gen_net[layer])
+            style_loss += tf.nn.l2_loss(gram - self.style_grams[layer]) * 2 / tf.to_float(size)  # l2_loss([batch,g] - [g])
+        style_loss = style_loss * self.style_weight
+        # total_variation_loss
+        # tv_loss = self.total_variation_loss(gen_output)
 
-        total_loss = content_loss * st.CONTENT_WEIGHT + style_loss * st.STYLE_WEIGHT
-        # print('done')
-        return total_loss
+        # total_loss = content_loss * self.content_weight + style_loss * self.style_weight + tv_loss * self.tv_weight
+        total_loss = content_loss + style_loss
+        return total_loss, content_loss, style_loss, gen_output
 
-    # def total_variation_loss(layer):
-    #     shape = tf.shape(layer)
-    #     height = shape[1]
-    #     width = shape[2]
-    #     y = tf.slice(layer, [0, 0, 0, 0], tf.stack([-1, height - 1, -1, -1])) - tf.slice(layer, [0, 1, 0, 0],
-    #                                                                                      [-1, -1, -1, -1])
-    #     x = tf.slice(layer, [0, 0, 0, 0], tf.stack([-1, -1, width - 1, -1])) - tf.slice(layer, [0, 0, 1, 0],
-    #                                                                                     [-1, -1, -1, -1])
-    #     loss = tf.nn.l2_loss(x) / tf.to_float(tf.size(x)) + tf.nn.l2_loss(y) / tf.to_float(tf.size(y))
-    #     return loss
+    def total_variation_loss(self, img):
+        shape = img.get_shape()
+        height = shape[1].value
+        width = shape[2].value
+        y = tf.slice(img, [0, 0, 0, 0], tf.stack([-1, height - 1, -1, -1])) - tf.slice(img, [0, 1, 0, 0],
+                                                                                            [-1, -1, -1, -1])
+        x = tf.slice(img, [0, 0, 0, 0], tf.stack([-1, -1, width - 1, -1])) - tf.slice(img, [0, 0, 1, 0],
+                                                                                           [-1, -1, -1, -1])
+        loss = tf.nn.l2_loss(x) / tf.to_float(tf.size(x)) + tf.nn.l2_loss(y) / tf.to_float(tf.size(y))
+        return loss
+
 
     def __gram(self, features):
-        # print('computing gram matrix.')
-        if isinstance(features, np.ndarray):
-            # print('it\'s ndarray:', features.shape)
-            # features 为1xHxWxN的三维数组
-            features = np.reshape(features, (-1, features.shape[-1]))  # 化为(H*W)xN的矩阵
-            n_l = features.shape[1]
-            m_l = features.shape[0]
-            # print('features.reshape', features.shape)
-            print(features.size)
-            print(features.shape)
-            gram = np.matmul(features.T, features) / (m_l * n_l)
-
-        elif isinstance(features, tf.Tensor):
-            # print('it\'s tensor', features.shape)
-            features = tf.reshape(features, [-1, features.shape[-1]])
-            n_l = features.shape[1].value  # feature.shape[0]是Dimension类型，不是int类型
-            m_l = features.shape[0].value
-            features_t = tf.transpose(features, [1, 0])
-            gram = tf.matmul(features_t, features) / (m_l * n_l)
-        else:
-            print('error type')
-            gram = None
-            n_l = None
-            m_l = None
-        # print('gram.shape=', gram.shape)
-        # print('done')
-        return gram, n_l, m_l
+        # Input : 4-D tensor shape [batch,h,w,c]
+        # Output: 2-D tensor shape [batch,g]
+        batch = features.shape[0].value
+        # print('batch',batch)
+        height = features.shape[1].value
+        weight = features.shape[2].value
+        # print('weight',weight)
+        # print('height',height)
+        channel = features.shape[-1].value
+        features = tf.reshape(features, [-1,weight*height, channel])
+        # print(features.get_shape())
+        size = features.shape[1].value * features.shape[2].value  # feature.shape[1]是Dimension类型，不是int类型
+        print('gen gram size:',size)
+        gram = tf.matmul(features, features, transpose_a=True) / size
+        # print(gram.get_shape())
+        return gram, size
 
