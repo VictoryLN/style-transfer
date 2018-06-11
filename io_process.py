@@ -8,7 +8,7 @@ def get_test_img(img_path):
     try:
         read_byt = tf.read_file(img_path)
         img = tf.image.decode_jpeg(read_byt,channels=3)
-        img = tf.image.resize_images(img, [224,224])
+        img = tf.image.resize_images(img, [474,712])
         img = tf.expand_dims(img, 0)
         img = tf.cast(img, tf.float32)
         img = img/255.0
@@ -38,7 +38,7 @@ def new_get_test_img(img_path): # one batch
     try:
         read_byt = tf.read_file(img_path)
         img = tf.image.decode_jpeg(read_byt,channels=3)
-        img = tf.image.resize_images(img, [224,224])
+        img = tf.image.resize_images(img, [474, 712])
         img = tf.expand_dims(img, 0)
         img = tf.cast(img, tf.float32)
         img = img/255.0

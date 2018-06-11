@@ -170,7 +170,7 @@ class GEN(object):
                         'padding': 'SAME', 'Nonlinearity': 'tanh'}
         }
         print('input_mat',input_mat)
-        x = tf.pad(input_mat, [[0, 0], [10, 10], [10, 10], [0, 0]], mode='REFLECT')
+        x = tf.pad(input_mat, [[0, 0], [10, 10], [10, 10], [0, 0]], mode='REFLECT', name='gen_input')
         for layer in net_info.values():
             print('layer:',layer)
             layer_type = layer['type']
@@ -201,6 +201,7 @@ class GEN(object):
         print('width', width)
         print('height', height)
         x = tf.image.crop_to_bounding_box(x, 10, 10, height-20, width-20)
+        x = tf.identity(x, name='gen_output')
         print(x)
         return x
 
@@ -247,7 +248,9 @@ class GEN(object):
         strides = [1, stride, stride, 1]
         shape = [kernel, kernel, in_channels, out_channels]
         weights = tf.Variable(tf.truncated_normal(shape, stddev=0.1), name='weight')
-        conv = tf.nn.conv2d(input=input_x, filter=weights, strides=strides, padding='SAME')
+        x_padded = tf.pad(input_x, [[0, 0], [int(kernel / 2), int(kernel / 2)], [int(kernel / 2), int(kernel / 2)], [0, 0]],
+                          mode='REFLECT')
+        conv = tf.nn.conv2d(input=x_padded, filter=weights, strides=strides, padding='VALID')
         return conv
 
     def img_scale(self, x, scale):
